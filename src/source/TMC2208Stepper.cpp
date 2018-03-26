@@ -22,6 +22,11 @@ TMC2208Stepper::TMC2208Stepper(uint16_t SW_RX_pin, uint16_t SW_TX_pin, bool has_
 	static SoftwareSerial mySWSerial = SoftwareSerial(SW_RX_pin, SW_TX_pin);
 	SWSerial = &mySWSerial;
 }
+TMC2208Stepper::TMC2208Stepper(TMC2208StepperUART * SerialPort, bool has_rx) {
+	write_only = !has_rx;
+	uses_sw_serial = false;
+	TMC_SERIAL = SerialPort;
+}
 
 void TMC2208Stepper::beginSerial(uint32_t baudrate) {
 	if (uses_sw_serial) SWSerial->begin(baudrate);
@@ -170,15 +175,19 @@ uint8_t TMC2208Stepper::calcCRC(uint8_t datagram[], uint8_t len) {
 }
 
 void TMC2208Stepper::sendDatagram(uint8_t addr, uint32_t regVal, uint8_t len) {
+	if (TMC_SERIAL) {
+		TMC_SERIAL->write_register(addr, regVal);
+		return;
+	}
 	uint8_t datagram[] = {TMC2208_SYNC, TMC2208_SLAVE_ADDR, addr, (uint8_t)(regVal>>24), (uint8_t)(regVal>>16), (uint8_t)(regVal>>8), (uint8_t)(regVal>>0), 0x00};
 
 	datagram[len] = calcCRC(datagram, len);
 
-	if (uses_sw_serial) {
+	if (SWSerial) {
 		for(int i=0; i<=len; i++){
 			bytesWritten += SWSerial->write(datagram[i]);
 		}
-	} else {
+	} else if (HWSerial) {
 		for(int i=0; i<=len; i++){
 			bytesWritten += HWSerial->write(datagram[i]);
 		}
@@ -205,17 +214,18 @@ uint64_t _sendDatagram(SERIAL_TYPE &serPtr, uint8_t datagram[], uint8_t len, uin
 }
 
 bool TMC2208Stepper::sendDatagram(uint8_t addr, uint32_t *data, uint8_t len) {
+	if (TMC_SERIAL)
+		return TMC_SERIAL->read_register(addr, data);
 	uint8_t datagram[] = {TMC2208_SYNC, TMC2208_SLAVE_ADDR, addr, 0x00};
 	datagram[len] = calcCRC(datagram, len);
 	uint64_t out = 0x00000000UL;
 
-	if (uses_sw_serial) {
+	if (SWSerial) {
 		SWSerial->listen();
 		out = _sendDatagram(*SWSerial, datagram, len, replyDelay);
-	} else {
+	} else if (HWSerial) {
 		out = _sendDatagram(*HWSerial, datagram, len, replyDelay);
 	}
-
 	uint8_t out_datagram[] = {(uint8_t)(out>>56), (uint8_t)(out>>48), (uint8_t)(out>>40), (uint8_t)(out>>32), (uint8_t)(out>>24), (uint8_t)(out>>16), (uint8_t)(out>>8), (uint8_t)(out>>0)};
 	if (calcCRC(out_datagram, 7) == (uint8_t)(out&0xFF)) {
 		*data = out>>8;
@@ -242,6 +252,19 @@ uint8_t TMC2208Stepper::GSTAT() {
 	GSTAT(&data);
 	return data;
 }
+
+uint32_t TMC2208Stepper::GCONF() {
+	uint32_t data = 0;
+	GCONF(&data);
+	return data;
+}
+
+uint32_t TMC2208Stepper::IOIN() {
+	uint32_t data = 0;
+	IOIN(&data);
+	return data;
+}
+
 
 void TMC2208Stepper::reset(bool B)	{ MOD_REG(GSTAT, RESET); 	}
 void TMC2208Stepper::drv_err(bool B){ MOD_REG(GSTAT, DRV_ERR); 	}
@@ -393,4 +416,9 @@ int16_t TMC2208Stepper::pwm_scale_auto() {
 	int16_t response = (d>>PWM_SCALE_AUTO_bp)&0xFF;
 	if (((d&PWM_SCALE_AUTO_bm) >> 24) & 0x1) return -response;
 	else return response;
+}
+
+bool TMC2208Stepper::PWM_AUTO(uint32_t *data) {
+	bool b = sendDatagram(TMC2208_READ|REG_PWM_AUTO, data);
+	return b;
 }

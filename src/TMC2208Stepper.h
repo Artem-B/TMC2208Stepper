@@ -10,10 +10,23 @@
 
 #define TMC2208STEPPER_VERSION 0x000200 // v0.2.0
 
+// Single-wire TMC22xx-specific UART variant that only 
+// needs 1 bidirectional pin to communicate.
+class TMC2208StepperUART{
+public:
+  TMC2208StepperUART(pin_t tx_pin, pin_t rx_pin);
+  void write_register(uint8_t reg, uint32_t value);
+  bool read_register(uint8_t reg, uint32_t *value);
+  void begin(uint32_t ignored) {}
+private:
+  pin_t _rx_pin, _tx_pin;
+};
+
 class TMC2208Stepper {
 	public:
 		TMC2208Stepper(Stream * SerialPort, bool has_rx=true);
 		TMC2208Stepper(uint16_t SW_RX_pin, uint16_t SW_TX_pin, bool has_rx=true);
+		TMC2208Stepper(TMC2208StepperUART * serial, bool has_rx=true);
 		void rms_current(uint16_t mA, float multiplier=0.5, float RS=0.11);
 		uint16_t rms_current();
 		void microsteps(uint16_t ms);
@@ -29,6 +42,7 @@ class TMC2208Stepper {
 		void beginSerial(uint32_t baudrate);
 		// RW: GCONF
 		void GCONF(uint32_t input);
+		uint32_t GCONF();
 		void I_scale_analog(bool B);
 		void internal_Rsense(bool B);
 		void en_spreadCycle(bool B);
@@ -71,6 +85,7 @@ class TMC2208Stepper {
 		bool OTP_READ(uint32_t *data);
 		// R: IOIN
 		bool IOIN(uint32_t *data);
+		uint32_t IOIN();
 		bool enn();
 		bool ms1();
 		bool ms2();
@@ -184,6 +199,7 @@ class TMC2208Stepper {
 		bool PWM_SCALE(uint32_t *data);
 		uint8_t pwm_scale_sum();
 		int16_t pwm_scale_auto();
+		bool PWM_AUTO(uint32_t *data);
 
 		bool isWriteOnly() {return write_only;}
 
@@ -192,7 +208,6 @@ class TMC2208Stepper {
 		inline int8_t hysterisis_end() __attribute__((always_inline)) { return hysteresis_end(); }
 		inline void hysterisis_start(uint8_t value) __attribute__((always_inline)) { hysteresis_start(value); }
 		inline uint8_t hysterisis_start() __attribute__((always_inline)) { return hysteresis_start(); }
-
 
 		uint16_t bytesWritten = 0;
 		float Rsense = 0.11;
@@ -211,6 +226,7 @@ class TMC2208Stepper {
 	private:
 		Stream * HWSerial = NULL;
 		SoftwareSerial * SWSerial = NULL;
+		TMC2208StepperUART * TMC_SERIAL;
 		void sendDatagram(uint8_t addr, uint32_t regVal, uint8_t len=7);
 		bool sendDatagram(uint8_t addr, uint32_t *data, uint8_t len=3);
 		uint8_t calcCRC(uint8_t datagram[], uint8_t len);
